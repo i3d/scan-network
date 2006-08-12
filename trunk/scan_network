@@ -2,7 +2,7 @@
 
 ### BEGIN INIT INFO
 # $Id. Yongjian Xu <i3dmaster@gmail.com> $
-# $Version: 0.1
+# $Version: 0.2
 #
 # Provides:          scan_network
 # Required:          Bash - this program used process substitution. Normal sh will not support this feature.
@@ -13,7 +13,8 @@
 # Short-Description: scan avail networks and populate interfaces file.
 # Description:       
 #                    
-# ToDo: handle multiple static IP configs for the same nic.
+# ToDo: 1. LiveCD support. -done
+#       2. A possible force keyword support in profile file to let user force using a saved config
 #                    
 ### END INIT INFO
 
@@ -21,15 +22,30 @@ set -e
 
 . /lib/lsb/init-functions
 
-CFG_DIR="/etc/network/scan_network"
+################ LiveCD support ##########################
+LIVECD=""
+LIVEUSER=""
+
+if [[ "$LIVECD" != "" ]]; then
+        if [[ -e /home/$LIVEUSER/.scan_network ]]; then
+                CFG_DIR="/home/$LIVEUSER/.scan_network"
+                ETH_CFG="$CFG_DIR/eth.cfg"
+                WIFI_CFG="$CFG_DIR/wifi.cfg"     
+        fi
+else
+        CFG_DIR="/etc/network/scan_network"
+        ETH_CFG="$CFG_DIR/eth.cfg"
+        WIFI_CFG="$CFG_DIR/wifi.cfg"
+fi
+#########################################################
+#
 ORIGFILE="$CFG_DIR/interfaces.orig"
 [[ ! -f $ORIGFILE ]] && log_failure_msg "FATAL: No $ORIGFILE file found under $CFG_DIR. Exit." && exit 1
 BKUPFILE="$CFG_DIR/.interfaces.scan_network.bk"
 ETH_TOOL="/sbin/mii-tool"
 WIFI_TOOL="/sbin/iwlist"
 WIFI_CONFIG_TOOL="/sbin/iwconfig"
-ETH_CFG="$CFG_DIR/eth.cfg"
-WIFI_CFG="$CFG_DIR/wifi.cfg"
+#
 #
 # Define ANSI colors
 export NORMAL="\033[0;39m"
