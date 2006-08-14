@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/bin/bash -xv
 
 ### BEGIN INFO
 # $Id. Yongjian Xu <i3dmaster@gmail.com> $
-# $Version: 0.2 $
+# $Version: 0.3 $
 # $ This source code maintained by svn at <http://code.google.com/p/scan-network/> $
 #
 # Provides:          scan_network
@@ -19,7 +19,9 @@
 #       2. A possible force keyword support in profile file to let user force using a saved config
 #                    
 ### END INIT INFO
+[[ -f /tmp/.debug/scan_network.debug ]] && rm -f /tmp/.debug/scan_network.debug
 
+(
 set -e
 
 . /lib/lsb/init-functions
@@ -31,22 +33,27 @@ LIVEUSER=""
 if [[ "$LIVECD" != "" ]]; then
         if [[ -e /home/$LIVEUSER/.scan_network ]]; then
                 CFG_DIR="/home/$LIVEUSER/.scan_network"
-                ETH_CFG="$CFG_DIR/eth.cfg"
-                WIFI_CFG="$CFG_DIR/wifi.cfg"     
         fi
 else
         CFG_DIR="/etc/network/scan_network"
-        ETH_CFG="$CFG_DIR/eth.cfg"
-        WIFI_CFG="$CFG_DIR/wifi.cfg"
 fi
+ETH_CFG="$CFG_DIR/eth.cfg"
+WIFI_CFG="$CFG_DIR/wifi.cfg"
 #########################################################
 #
 ORIGFILE="$CFG_DIR/interfaces.orig"
 [[ ! -f $ORIGFILE ]] && log_failure_msg "FATAL: No $ORIGFILE file found under $CFG_DIR. Exit." && exit 1
 BKUPFILE="$CFG_DIR/.interfaces.scan_network.bk"
-ETH_TOOL="/sbin/mii-tool"
-WIFI_TOOL="/sbin/iwlist"
-WIFI_CONFIG_TOOL="/sbin/iwconfig"
+ETH_TOOL=${ETH_TOOL:-/sbin/mii-tool}
+WIFI_TOOL=${WIFI_TOOL:-/sbin/iwlist}
+WIFI_CONFIG_TOOL=${WIFI_CONFIG_TOOL:-/sbin/iwconfig}
+IFCONFIG=${IFCONFIG:-/sbin/ifconfig}
+DHCLIENT=${DHCLIENT:-/sbin/dhclient}
+[[ -f /etc/dhclient.conf ]] && DHCFG="/etc/dhclient.conf"
+LS=${LS:-/bin/ls}
+GREP=${GREP:-/bin/grep}
+PS=${PS:-/bin/ps}
+XARGS=${XARGS:-/usr/bin/xargs}
 #
 #
 # Define ANSI colors
@@ -65,6 +72,17 @@ E_DEV=""
 E_CMD=""
 W_DEV=""
 
+alter_dhcfg() {
+        if [[ $DHCFG ]]; then
+                _defint=$(cat $DHCFG | $GREP "initial-interval" | awk '{print $2}')
+                echo "${_defint/;/}" >/tmp/.dhcfg
+                sed -i '/initial-interval/{s/^#//;s/[0-9]\+/0/}' $DHCFG
+        else
+                echo -e "${YELLOW}$DHCFG not found. Unable to probe wireless networks."
+                return 1 
+        fi
+}
+
 start_scan () {
     log_action_begin_msg "Scan networking starting ... "
     #Everytime when scan_network starts, always make sure it starts from the orig file which have nothing configured in it.
@@ -74,22 +92,22 @@ start_scan () {
     #Check if any eth interfaces are connected with cable.
     #Its possible that wireless card is also having an ethx name.
     ( $WIFI_CONFIG_TOOL >/tmp/.iwconfig ) 2>/dev/null
-    W_DEV=$(cat /tmp/.iwconfig | grep ESSID | awk '{print $1}')
+    W_DEV=$(cat /tmp/.iwconfig | $GREP ESSID | awk '{print $1}')
     if [[ $W_DEV != "" ]]; then
         while read eth_dev; do
-            if [[ ! $($ETH_TOOL $eth_dev | /bin/grep "no link") ]]; then
+            if [[ ! $($ETH_TOOL $eth_dev | $GREP "no link") ]]; then
                 E_DEV="$E_DEV $eth_dev"
                 E_CMD="iface $eth_dev inet dhcp\nup ifconfig $eth_dev mtu 1400\n\n$E_CMD"
             fi
-        done < <(/bin/ls -d /sys/class/net/*/device | /bin/grep eth \
-                | sed 's/.*net\///g;s/\/.*//g' | grep -v "$W_DEV")
+        done < <($LS -d /sys/class/net/*/device | $GREP eth \
+                | sed 's/.*net\///g;s/\/.*//g' | $GREP -v "$W_DEV")
     else
         while read eth_dev; do
-            if [[ ! $($ETH_TOOL $eth_dev | /bin/grep "no link") ]]; then
+            if [[ ! $($ETH_TOOL $eth_dev | $GREP "no link") ]]; then
                 E_DEV="$E_DEV $eth_dev"
                 E_CMD="iface $eth_dev inet dhcp\nup ifconfig $eth_dev mtu 1400\n\n$E_CMD"
             fi
-        done < <(/bin/ls -d /sys/class/net/*/device | /bin/grep eth | sed 's/.*net\///g;s/\/.*//g')
+        done < <($LS -d /sys/class/net/*/device | $GREP eth | sed 's/.*net\///g;s/\/.*//g')
     fi
 
     #If eth card(s) connected.
@@ -97,19 +115,20 @@ start_scan () {
         sed -i 's/auto lo/& '"$E_DEV"'/' /etc/network/interfaces
         echo >>/etc/network/interfaces
         #If eth.cfg file isn't configured.
-        if [[ ! $(cat $ETH_CFG | grep -v '^#') ]]; then
+        if [[ ! $(cat $ETH_CFG | $GREP -v '^#') ]]; then
             echo -e "$E_CMD" >>/etc/network/interfaces
         else
             for iface in $(echo $E_DEV); do
                 #If eth.cfg is configured but this iface isn't.
-                if [[ ! $(cat $ETH_CFG | sed -n '/^#\|^$/!p' | grep $iface) ]]; then
+                if [[ ! $(cat $ETH_CFG | sed -n '/^#\|^$/!p' | $GREP  $iface) ]]; then
                     echo -e "iface $iface inet dhcp\nup ifconfig $iface mtu 1400\n\n" >>/etc/network/interfaces
                 else
                     i=2;a="\t1. DHCP"
                     while read line; do
                         a="$a\n\t$i. $line"; i=$((i+1))
-                    done < <(cat $CFG_DIR/eth.cfg | /bin/grep -v '^#' | /bin/grep '|' | /bin/grep $iface | awk -F: '{print $1}'| sed 's/|//')
+                    done < <(cat $CFG_DIR/eth.cfg | $GREP -v '^#' | $GREP '|' | $GREP $iface | awk -F: '{print $1}'| sed 's/|//')
                     unset i
+                    echo
                     echo -e "\n${CYAN}$a${END}"
                     #start_count=$(date +%s)
                     while read -t 10 -p "Ethernet profile to use(pick number)[enter or 1 is the default]: " choice; do
@@ -117,8 +136,8 @@ start_scan () {
                             ""|1)   echo -e "iface $iface inet dhcp\nup ifconfig $iface mtu 1400\n\n" >>/etc/network/interfaces 
                                     break
                                     ;;
-                            [2-9])  if [[ $(echo -e "$a" | /bin/grep $choice) ]]; then 
-                                        profile=$(echo -e "$a" | /bin/grep $choice | awk '{print $2}')
+                            [2-9])  if [[ $(echo -e "$a" | $GREP $choice) ]]; then 
+                                        profile=$(echo -e "$a" | $GREP $choice | awk '{print $2}')
                                         cat $ETH_CFG | sed -n '/^#\|^$/!p' \
                                         | awk -v i=$iface -v l=$profile \
                                         'BEGIN{FS="[|]";RS=""};{for(k=1;k<=NF;k++) \
@@ -152,19 +171,35 @@ start_scan () {
     fi
 
     #If there is a wireless device, probe the wireless env around.
-    if [[ $W_DEV != "" ]];then 
+    if [[ $W_DEV != "" ]] && alter_dhcfg ;then 
+        cp /etc/resolv.conf /etc/resolv.conf.bk
+        echo
+        echo -e "${YELLOW}Probing wireless network around this area ...${END}"
+        $DHCLIENT -e $(echo $W_DEV|head -1) 2>/dev/null 1>/dev/null &
+        sleep 5
+        echo "Killing the dhclient"
+        $PS -aef | $GREP 'dhclient' | $GREP "$(echo $W_DEV|head -1)" | awk '{print $2}' | $XARGS -ti kill -9 {} 
+        DEFINT=$(cat /tmp/.dhcfg)
+        sed -i '/initial-interval/{s/^/#/;s/[0-9]\+/'"$DEFINT"'/}' $DHCFG
+        unset DEFINT
         ( $WIFI_TOOL scanning >/tmp/.iwlist.scan ) 2>/dev/null
+        $IFCONFIG $(echo $W_DEV|head -1) down 2>/dev/null 1>/dev/null
+        mv /etc/resolv.conf.bk /etc/resolv.conf
+        if [[ ! -s /tmp/.iwlist.scan ]]; then
+                echo "${YELLOW}No wireless network detected${END}"
+                exit 0
+        fi
     fi
     
-    if [[ -s /tmp/.iwlist.scan ]] && [[ ! $(cat /tmp/.iwlist.scan | grep "No Scan") ]]; then
+    if [[ ! $(cat /tmp/.iwlist.scan | $GREP  "No Scan") ]]; then
             cat /tmp/.iwlist.scan | awk 'BEGIN{FS="Cell "; RS=""};{for(i=2;i<=NF;i++)print $i >"/tmp/."i-1".scan"}'
             #pick the strongest one to access
-            wifi_info=$(cat $(/bin/grep -iw quality /tmp/.[1-9]*.scan \
+            wifi_info=$(cat $($GREP -iw quality /tmp/.[1-9]*.scan \
             | sort -t'=' -k2.1nr | awk '{$1=gensub(":","","g",$1);print $1}' | head -1))
-            ESSID=$(echo $wifi_info| grep 'ESSID' | awk -F\" '{print $2}')
-            #MODE=$(echo $wifi_info | grep 'Mode' | awk -F: '{print $2}')
-            KEY=$(echo $wifi_info | grep 'Encryption' | awk -F: '{print $2}')
-            if [[ ! $(cat $WIFI_CFG | grep -v '^#' | grep "$ESSID") ]]; then 
+            ESSID=$(echo $wifi_info| $GREP 'ESSID' | awk -F\" '{print $2}')
+            #MODE=$(echo $wifi_info | $GREP 'Mode' | awk -F: '{print $2}')
+            KEY=$(echo $wifi_info | $GREP 'Encryption' | awk -F: '{print $2}')
+            if [[ ! $(cat $WIFI_CFG | $GREP -v '^#' | $GREP "$ESSID") ]]; then 
                 if [[ x$KEY = "xoff" ]]; then
                     sed -i 's/auto lo/& '"$W_DEV"'/' /etc/network/interfaces    
                     echo >>/etc/network/interfaces
@@ -189,10 +224,11 @@ start_scan () {
             fi
            
     fi
-#[[ ! -d /tmp/.debug ]] && mkdir -p /tmp/.debug
-#mv /tmp/.*.scan /tmp/.debug
-#mv /tmp/.iwconfig /tmp/.debug
+[[ ! -d /tmp/.debug ]] && mkdir -p /tmp/.debug
+mv /tmp/.*.scan /tmp/.debug
+mv /tmp/.iwconfig /tmp/.debug
 rm -fr /tmp/.*.scan /tmp/.iwconfig
+rm -fr /tmp/.dhcfg
 log_end_msg 0
 }
  
@@ -214,3 +250,4 @@ case $1 in
 esac    
 
 exit 0
+) 2>&1 | tee -a /tmp/.debug/scan_network.debug
