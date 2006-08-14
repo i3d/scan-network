@@ -1,8 +1,8 @@
-#!/bin/bash -xv
+#!/bin/bash
 
 ### BEGIN INFO
 # $Id. Yongjian Xu <i3dmaster@gmail.com> $
-# $Version: 0.3 $
+# $Version: 0.3.1 $
 # $ This source code maintained by svn at <http://code.google.com/p/scan-network/> $
 #
 # Provides:          scan_network
@@ -19,9 +19,12 @@
 #       2. A possible force keyword support in profile file to let user force using a saved config
 #                    
 ### END INIT INFO
-[[ -f /tmp/.debug/scan_network.debug ]] && rm -f /tmp/.debug/scan_network.debug
 
-(
+RUNDIR="/etc/network/scan_network"
+[[ -f $RUNDIR/scan_network.debug ]] && rm -f $RUNDIR/scan_network.debug
+
+mount -o remount,rw / 2>/dev/null 1>/dev/null
+
 set -e
 
 . /lib/lsb/init-functions
@@ -75,24 +78,30 @@ W_DEV=""
 alter_dhcfg() {
         if [[ $DHCFG ]]; then
                 _defint=$(cat $DHCFG | $GREP "initial-interval" | awk '{print $2}')
-                echo "${_defint/;/}" >/tmp/.dhcfg
+                echo "${_defint/;/}" >$RUNDIR/.dhcfg
                 sed -i '/initial-interval/{s/^#//;s/[0-9]\+/0/}' $DHCFG
+                #echo "the content of $RUNDIR/.dhcfg is $(cat $RUNDIR/.dhcfg)"
         else
                 echo -e "${YELLOW}$DHCFG not found. Unable to probe wireless networks."
                 return 1 
         fi
 }
 
+#sleep 10
+
 start_scan () {
     log_action_begin_msg "Scan networking starting ... "
     #Everytime when scan_network starts, always make sure it starts from the orig file which have nothing configured in it.
     cp /etc/network/interfaces $BKUPFILE
     cp $ORIGFILE /etc/network/interfaces
+    
+    #sleep 10
 
     #Check if any eth interfaces are connected with cable.
     #Its possible that wireless card is also having an ethx name.
-    ( $WIFI_CONFIG_TOOL >/tmp/.iwconfig ) 2>/dev/null
-    W_DEV=$(cat /tmp/.iwconfig | $GREP ESSID | awk '{print $1}')
+    ( $WIFI_CONFIG_TOOL >$RUNDIR/.iwconfig ) 2>/dev/null
+    #echo "The content of $RUNDIR/.iwconfig is $(cat $RUNDIR/.iwconfig)"
+    W_DEV=$(cat $RUNDIR/.iwconfig | $GREP ESSID | awk '{print $1}')
     if [[ $W_DEV != "" ]]; then
         while read eth_dev; do
             if [[ ! $($ETH_TOOL $eth_dev | $GREP "no link") ]]; then
@@ -109,6 +118,8 @@ start_scan () {
             fi
         done < <($LS -d /sys/class/net/*/device | $GREP eth | sed 's/.*net\///g;s/\/.*//g')
     fi
+    
+    #sleep 10
 
     #If eth card(s) connected.
     if [[ x"$E_DEV" != "x" ]]; then
@@ -170,32 +181,42 @@ start_scan () {
         fi
     fi
 
+    #sleep 10
+
     #If there is a wireless device, probe the wireless env around.
     if [[ $W_DEV != "" ]] && alter_dhcfg ;then 
         cp /etc/resolv.conf /etc/resolv.conf.bk
         echo
         echo -e "${YELLOW}Probing wireless network around this area ...${END}"
+        echo
         $DHCLIENT -e $(echo $W_DEV|head -1) 2>/dev/null 1>/dev/null &
         sleep 5
-        echo "Killing the dhclient"
-        $PS -aef | $GREP 'dhclient' | $GREP "$(echo $W_DEV|head -1)" | awk '{print $2}' | $XARGS -ti kill -9 {} 
-        DEFINT=$(cat /tmp/.dhcfg)
+        $PS -aef | $GREP 'dhclient' | $GREP "$(echo $W_DEV|head -1)" | awk '{print $2}' | $XARGS -ti kill -9 {} 2>/dev/null 1>/dev/null
+        #sleep 10
+        DEFINT=$(cat $RUNDIR/.dhcfg)
+        #echo "DEFINT is $DEFINT"
         sed -i '/initial-interval/{s/^/#/;s/[0-9]\+/'"$DEFINT"'/}' $DHCFG
         unset DEFINT
-        ( $WIFI_TOOL scanning >/tmp/.iwlist.scan ) 2>/dev/null
+        ( $WIFI_TOOL scanning >$RUNDIR/.iwlist.scan ) 2>/dev/null
+        #echo "The content of $RUNDIR/.iwlist.scan is $(cat $RUNDIR/.iwlist.scan)"
         $IFCONFIG $(echo $W_DEV|head -1) down 2>/dev/null 1>/dev/null
         mv /etc/resolv.conf.bk /etc/resolv.conf
-        if [[ ! -s /tmp/.iwlist.scan ]]; then
+        if [[ ! -s $RUNDIR/.iwlist.scan ]]; then
                 echo "${YELLOW}No wireless network detected${END}"
                 exit 0
         fi
     fi
-    
-    if [[ ! $(cat /tmp/.iwlist.scan | $GREP  "No Scan") ]]; then
-            cat /tmp/.iwlist.scan | awk 'BEGIN{FS="Cell "; RS=""};{for(i=2;i<=NF;i++)print $i >"/tmp/."i-1".scan"}'
+
+    #sleep 20
+
+    if [[ ! $(cat $RUNDIR/.iwlist.scan | $GREP  "No Scan") ]]; then
+            #cat $RUNDIR/.iwlist.scan && sleep 30
+            cat $RUNDIR/.iwlist.scan | awk 'BEGIN{FS="Cell "; RS=""};{for(i=2;i<=NF;i++)print $i >"'$RUNDIR'/."i-1".scan"}'
             #pick the strongest one to access
-            wifi_info=$(cat $($GREP -iw quality /tmp/.[1-9]*.scan \
+            #sleep 40
+            wifi_info=$(cat $($GREP -iw quality $RUNDIR/.[1-9]*.scan \
             | sort -t'=' -k2.1nr | awk '{$1=gensub(":","","g",$1);print $1}' | head -1))
+            #echo "the wifi_info is $wifi_info"
             ESSID=$(echo $wifi_info| $GREP 'ESSID' | awk -F\" '{print $2}')
             #MODE=$(echo $wifi_info | $GREP 'Mode' | awk -F: '{print $2}')
             KEY=$(echo $wifi_info | $GREP 'Encryption' | awk -F: '{print $2}')
@@ -224,11 +245,15 @@ start_scan () {
             fi
            
     fi
-[[ ! -d /tmp/.debug ]] && mkdir -p /tmp/.debug
-mv /tmp/.*.scan /tmp/.debug
-mv /tmp/.iwconfig /tmp/.debug
-rm -fr /tmp/.*.scan /tmp/.iwconfig
-rm -fr /tmp/.dhcfg
+
+    #sleep 20
+    #cat /etc/network/interfaces
+    #sleep 50
+
+#[[ ! -d $RUNDIR/.debug ]] && mkdir -p $RUNDIR/.debug && echo "Creating debug dir"
+#mv $RUNDIR/.*.scan $RUNDIR/.iwconfig $RUNDIR/.dhcfg $RUNDIR/.debug
+#sleep 20
+rm -fr $RUNDIR/.*.scan $RUNDIR/.iwconfig $RUNDIR/.dhcfg
 log_end_msg 0
 }
  
@@ -249,5 +274,7 @@ case $1 in
         ;;
 esac    
 
+mount -o remount,ro / 2>/dev/null 1>/dev/null
+
 exit 0
-) 2>&1 | tee -a /tmp/.debug/scan_network.debug
+#) 2>&1 | tee -a $RUNDIR/.debug/scan_network.debug
