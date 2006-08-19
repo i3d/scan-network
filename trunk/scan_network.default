@@ -1,0 +1,7 @@
+# defaults file for scan_network 
+
+# start scan_network in daemon mode from init.d script?
+#  only allowed values are "true", "false"
+#  when this sets to "true", scan_network startup script
+#  will invoke the daemon perl script.
+#ENABLE_DAEMON=false
