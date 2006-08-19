@@ -11,46 +11,56 @@
 #                    if home is a writable device in LiveCD env. On a local system, this is not required.
 # Required-Stop:
 # Default-Start:     rcS.d/S08scan_network
-# Default-Stop:      rc0.d/K08scan_network, rc6.d/K08scan_network
+# Default-Stop:      optional: rc0.d/K08scan_network
+#                    rc6.d/K08scan_network
 # Short-Description: scan avail networks and populate interfaces file.
 # Description:       
 #                    
-# ToDo: 1. LiveCD support. -done
-#       2. A possible force keyword support in profile file to let user force using a saved config
+# ToDo: 1. LiveCD detection. -done
+#       2. Daemon support (log support).
+#       3. A possible force keyword support in profile file to let user force using a saved config
+#       4. wpasupplicant support
+#       5. GUI support.
 #                    
 ### END INIT INFO
 
-RUNDIR="/etc/network/scan_network"
-[[ -f $RUNDIR/scan_network.debug ]] && rm -f $RUNDIR/scan_network.debug
-
-mount -o remount,rw / 2>/dev/null 1>/dev/null
+#For debug purpose
+#export RUNDIR="/etc/network/scan_network"
+#[[ -f $RUNDIR/scan_network.debug ]] && rm -f $RUNDIR/scan_network.debug
 
 set -e
 
 . /lib/lsb/init-functions
+. /etc/default/scan_network
 
 ################ LiveCD support ##########################
-LIVECD=""
-LIVEUSER=""
+export LIVECD=""
+export LIVEUSER=""
 
 if [[ "$LIVECD" != "" ]]; then
-        if [[ -e /home/$LIVEUSER/.scan_network ]]; then
-                CFG_DIR="/home/$LIVEUSER/.scan_network"
+        if [[ ! -e /home/$LIVEUSER/.scan_network ]]; then
+                mkdir -p /home/$LIVEUSER/.scan_network
+                cp /etc/network/scan_network/* /home/$LIVEUSER/.scan_network        
+                
         fi
+        export CFG_DIR="/home/$LIVEUSER/.scan_network"
 else
-        CFG_DIR="/etc/network/scan_network"
+        export CFG_DIR="/etc/network/scan_network"
 fi
-ETH_CFG="$CFG_DIR/eth.cfg"
-WIFI_CFG="$CFG_DIR/wifi.cfg"
+export ETH_CFG="$CFG_DIR/eth.cfg"
+export WIFI_CFG="$CFG_DIR/wifi.cfg"
 #########################################################
 #
-ORIGFILE="$CFG_DIR/interfaces.orig"
+export IFACEFILE="/etc/network/interfaces"
+export IFSTATE="/etc/network/run/ifstate"
+export ORIGFILE="$CFG_DIR/interfaces.orig"
 [[ ! -f $ORIGFILE ]] && log_failure_msg "FATAL: No $ORIGFILE file found under $CFG_DIR. Exit." && exit 1
-BKUPFILE="$CFG_DIR/.interfaces.scan_network.bk"
-ETH_TOOL=${ETH_TOOL:-/sbin/mii-tool}
-WIFI_TOOL=${WIFI_TOOL:-/sbin/iwlist}
-WIFI_CONFIG_TOOL=${WIFI_CONFIG_TOOL:-/sbin/iwconfig}
-IFCONFIG=${IFCONFIG:-/sbin/ifconfig}
+export BKUPFILE="$CFG_DIR/.interfaces.scan_network.bk"
+export ETH_TOOL=${ETH_TOOL:-/sbin/mii-tool}
+export WIFI_TOOL=${WIFI_TOOL:-/sbin/iwlist}
+export WIFI_CONFIG_TOOL=${WIFI_CONFIG_TOOL:-/sbin/iwconfig}
+export IFCONFIG=${IFCONFIG:-/sbin/ifconfig}
+export LOGFILE=${LOGFILE:-/var/log/scan_network.log}
 DHCLIENT=${DHCLIENT:-/sbin/dhclient}
 [[ -f /etc/dhclient.conf ]] && DHCFG="/etc/dhclient.conf"
 LS=${LS:-/bin/ls}
@@ -71,9 +81,9 @@ export WHITE="\033[1;37m"
 export END="\033[0m"
 #
 # Init some variables
-E_DEV=""
-E_CMD=""
-W_DEV=""
+export E_DEV=""
+export E_CMD=""
+export W_DEV=""
 
 alter_dhcfg() {
         if [[ $DHCFG ]]; then
@@ -90,10 +100,10 @@ alter_dhcfg() {
 #sleep 10
 
 start_scan () {
-    log_action_begin_msg "Scan networking starting ... "
+    log_action_begin_msg "Scan networking starting"
     #Everytime when scan_network starts, always make sure it starts from the orig file which have nothing configured in it.
-    cp /etc/network/interfaces $BKUPFILE
-    cp $ORIGFILE /etc/network/interfaces
+    cp $IFACEFILE $BKUPFILE
+    cp $ORIGFILE $IFACEFILE
     
     #sleep 10
 
@@ -123,16 +133,16 @@ start_scan () {
 
     #If eth card(s) connected.
     if [[ x"$E_DEV" != "x" ]]; then
-        sed -i 's/auto lo/& '"$E_DEV"'/' /etc/network/interfaces
-        echo >>/etc/network/interfaces
+        sed -i 's/auto lo/& '"$E_DEV"'/' $IFACEFILE
+        echo >>$IFACEFILE
         #If eth.cfg file isn't configured.
         if [[ ! $(cat $ETH_CFG | $GREP -v '^#') ]]; then
-            echo -e "$E_CMD" >>/etc/network/interfaces
+            echo -e "$E_CMD" >>$IFACEFILE
         else
             for iface in $(echo $E_DEV); do
                 #If eth.cfg is configured but this iface isn't.
                 if [[ ! $(cat $ETH_CFG | sed -n '/^#\|^$/!p' | $GREP  $iface) ]]; then
-                    echo -e "iface $iface inet dhcp\nup ifconfig $iface mtu 1400\n\n" >>/etc/network/interfaces
+                    echo -e "iface $iface inet dhcp\nup ifconfig $iface mtu 1400\n\n" >>$IFACEFILE
                 else
                     i=2;a="\t1. DHCP"
                     while read line; do
@@ -144,7 +154,7 @@ start_scan () {
                     #start_count=$(date +%s)
                     while read -t 10 -p "Ethernet profile to use(pick number)[enter or 1 is the default]: " choice; do
                         case $choice in
-                            ""|1)   echo -e "iface $iface inet dhcp\nup ifconfig $iface mtu 1400\n\n" >>/etc/network/interfaces 
+                            ""|1)   echo -e "iface $iface inet dhcp\nup ifconfig $iface mtu 1400\n\n" >>$IFACEFILE 
                                     break
                                     ;;
                             [2-9])  if [[ $(echo -e "$a" | $GREP $choice) ]]; then 
@@ -154,8 +164,8 @@ start_scan () {
                                         'BEGIN{FS="[|]";RS=""};{for(k=1;k<=NF;k++) \
                                         {if((index($k,i))&&(index($k,l)))p=$k}};END{print p}' \
                                         | sed 's/'"$profile"': //g' \
-                                        >>/etc/network/interfaces
-                                        echo >>/etc/network/interfaces
+                                        >>$IFACEFILE
+                                        echo >>$IFACEFILE
                                         break
                                     else
                                         echo "${RED}No such choice.${END}"
@@ -167,14 +177,14 @@ start_scan () {
                         #end_count=$(date +%s)
                         #if (( $end_count - $start_count > 5 )); then
                         #    echo -e "${YELLOW}\tDHCP is assumed for this device $iface ... {END}"
-                        #    echo -e "iface $iface inet dhcp\nup ifconfig $iface mtu 1400\n\n" >>/etc/network/interfaces
+                        #    echo -e "iface $iface inet dhcp\nup ifconfig $iface mtu 1400\n\n" >>$IFACEFILE
                         #    break
                         #fi
                     done
                     if [[ ! $choice ]]; then
                         echo
                         echo -e "${YELLOW}\tDHCP is assumed for this device $iface ... ${END}"
-                        echo -e "iface $iface inet dhcp\nup ifconfig $iface mtu 1400\n\n" >>/etc/network/interfaces
+                        echo -e "iface $iface inet dhcp\nup ifconfig $iface mtu 1400\n\n" >>$IFACEFILE
                     fi
                 fi
             done
@@ -191,7 +201,7 @@ start_scan () {
         echo
         $DHCLIENT -e $(echo $W_DEV|head -1) 2>/dev/null 1>/dev/null &
         sleep 5
-        $PS -aef | $GREP 'dhclient' | $GREP "$(echo $W_DEV|head -1)" | awk '{print $2}' | $XARGS -ti kill -9 {} 2>/dev/null 1>/dev/null
+        ( $PS -aef | $GREP 'dhclient' | $GREP "$(echo $W_DEV|head -1)" | awk '{print $2}' | $XARGS -ti kill -9 {} ) 2>/dev/null 1>/dev/null
         #sleep 10
         DEFINT=$(cat $RUNDIR/.dhcfg)
         #echo "DEFINT is $DEFINT"
@@ -222,32 +232,32 @@ start_scan () {
             KEY=$(echo $wifi_info | $GREP 'Encryption' | awk -F: '{print $2}')
             if [[ ! $(cat $WIFI_CFG | $GREP -v '^#' | $GREP "$ESSID") ]]; then 
                 if [[ x$KEY = "xoff" ]]; then
-                    sed -i 's/auto lo/& '"$W_DEV"'/' /etc/network/interfaces    
-                    echo >>/etc/network/interfaces
+                    sed -i 's/auto lo/& '"$W_DEV"'/' $IFACEFILE    
+                    echo >>$IFACEFILE
                 fi
                 for i in $(echo $W_DEV); do
-                    echo -e "iface $i inet dhcp\n\tup ifconfig $i mtu 1400\n" >>/etc/network/interfaces
-                    echo -e "\twireless-mode managed\n" >>/etc/network/interfaces
-                    echo -e "\twireless-essid $ESSID\n" >>/etc/network/interfaces
-                    echo >>/etc/network/interfaces
+                    echo -e "iface $i inet dhcp\n\tup ifconfig $i mtu 1400\n" >>$IFACEFILE
+                    echo -e "\twireless-mode managed\n" >>$IFACEFILE
+                    echo -e "\twireless-essid $ESSID\n" >>$IFACEFILE
+                    echo >>$IFACEFILE
                 done
             else
                  #Not considering the situation where different physical place having the same ESSID. 
                  #For example, Home with ESSID "foo" and Office having the same ESSID "foo". 
                  #Although its possible, but would be very very rare.
-                    sed -i 's/auto lo/& '"$W_DEV"'/' /etc/network/interfaces
+                    sed -i 's/auto lo/& '"$W_DEV"'/' $IFACEFILE
                     cat $WIFI_CFG | sed -n '/^#\|^$/!p' \
                     | awk -v i=$ESSID \
                     'BEGIN{FS="[|]";RS=""};{for(k=1;k<=NF;k++) \
                     {if(index($k,i))p=$k}};END{print p}' \
                     | sed 's/^[^ ]*: //g' \
-                    >>/etc/network/interfaces
+                    >>$IFACEFILE
             fi
            
     fi
 
     #sleep 20
-    #cat /etc/network/interfaces
+    #cat $IFACEFILE
     #sleep 50
 
 #[[ ! -d $RUNDIR/.debug ]] && mkdir -p $RUNDIR/.debug && echo "Creating debug dir"
@@ -258,12 +268,14 @@ log_end_msg 0
 }
  
 stop_scan () {
-    cp $ORIGFILE /etc/network/interfaces
+    cp $ORIGFILE $IFACEFILE
+    [[ -f /var/run/scan_network.pid ]] && kill -15 $(cat /var/run/scan_network.pid) 2>/dev/null 1>/dev/null
 }
 
 case $1 in
     start|restart|reload|force-reload)
         start_scan
+        [[ -f /usr/sbin/scan_network.pl ]] && [[ $ENABLE_DAEMON = "true" ]] && /usr/sbin/scan_network.pl 2>/dev/null 1>/dev/null
         ;;
     stop|shutdown)
         stop_scan
@@ -273,8 +285,6 @@ case $1 in
         exit 1
         ;;
 esac    
-
-mount -o remount,ro / 2>/dev/null 1>/dev/null
 
 exit 0
 #) 2>&1 | tee -a $RUNDIR/.debug/scan_network.debug
