@@ -2,7 +2,7 @@
 
 ### BEGIN INFO
 # $Id. Yongjian Xu <i3dmaster@gmail.com> $
-# $Version: 0.3.1 $
+# $Version: 0.3.2 $
 # $ This source code maintained by svn at <http://code.google.com/p/scan-network/> $
 #
 # Provides:          scan_network
@@ -22,10 +22,14 @@
 #       4. wpasupplicant support
 #       5. GUI support.
 #                    
+# Comments: This script is having problem running under virtual machine
+#           since the the network interfaces under vm are virtual devices.
+#           mii-tool will report error.
+#
 ### END INIT INFO
 
 #For debug purpose
-#export RUNDIR="/etc/network/scan_network"
+export RUNDIR="/etc/network/scan_network"
 #[[ -f $RUNDIR/scan_network.debug ]] && rm -f $RUNDIR/scan_network.debug
 
 set -e
@@ -33,6 +37,7 @@ set -e
 . /lib/lsb/init-functions
 . /etc/default/scan_network
 
+(
 ################ LiveCD support ##########################
 export LIVECD=""
 export LIVEUSER=""
@@ -40,7 +45,8 @@ export LIVEUSER=""
 if [[ "$LIVECD" != "" ]]; then
         if [[ ! -e /home/$LIVEUSER/.scan_network ]]; then
                 mkdir -p /home/$LIVEUSER/.scan_network
-                cp /etc/network/scan_network/* /home/$LIVEUSER/.scan_network        
+                cp /etc/network/scan_network/* /home/$LIVEUSER/.scan_network
+                chown -R $LIVEUSER:$LIVEUSER /home/$LIVEUSER/.scan_network
                 
         fi
         export CFG_DIR="/home/$LIVEUSER/.scan_network"
@@ -111,7 +117,7 @@ start_scan () {
     #Its possible that wireless card is also having an ethx name.
     ( $WIFI_CONFIG_TOOL >$RUNDIR/.iwconfig ) 2>/dev/null
     #echo "The content of $RUNDIR/.iwconfig is $(cat $RUNDIR/.iwconfig)"
-    W_DEV=$(cat $RUNDIR/.iwconfig | $GREP ESSID | awk '{print $1}')
+    W_DEV=$(cat $RUNDIR/.iwconfig | $GREP "ESSID" | awk '{print $1}')
     if [[ $W_DEV != "" ]]; then
         while read eth_dev; do
             if [[ ! $($ETH_TOOL $eth_dev | $GREP "no link") ]]; then
@@ -195,13 +201,13 @@ start_scan () {
 
     #If there is a wireless device, probe the wireless env around.
     if [[ $W_DEV != "" ]] && alter_dhcfg ;then 
-        cp /etc/resolv.conf /etc/resolv.conf.bk
+        [[ -f /etc/resolv.conf ]] && cp /etc/resolv.conf /etc/resolv.conf.bk
         echo
         echo -e "${YELLOW}Probing wireless network around this area ...${END}"
         echo
         $DHCLIENT -e $(echo $W_DEV|head -1) 2>/dev/null 1>/dev/null &
         sleep 5
-        ( $PS -aef | $GREP 'dhclient' | $GREP "$(echo $W_DEV|head -1)" | awk '{print $2}' | $XARGS -ti kill -9 {} ) 2>/dev/null 1>/dev/null
+        ( $PS -aef | $GREP "$DHCLIENT" | $GREP "$(echo $W_DEV|head -1)" | awk '{print $2}' | $XARGS -ti kill -9 {} ) 2>/dev/null 1>/dev/null
         #sleep 10
         DEFINT=$(cat $RUNDIR/.dhcfg)
         #echo "DEFINT is $DEFINT"
@@ -210,13 +216,11 @@ start_scan () {
         ( $WIFI_TOOL scanning >$RUNDIR/.iwlist.scan ) 2>/dev/null
         #echo "The content of $RUNDIR/.iwlist.scan is $(cat $RUNDIR/.iwlist.scan)"
         $IFCONFIG $(echo $W_DEV|head -1) down 2>/dev/null 1>/dev/null
-        mv /etc/resolv.conf.bk /etc/resolv.conf
+        [[ -f /etc/resolv.conf.bk ]] && mv /etc/resolv.conf.bk /etc/resolv.conf
         if [[ ! -s $RUNDIR/.iwlist.scan ]]; then
                 echo "${YELLOW}No wireless network detected${END}"
                 exit 0
         fi
-    fi
-
     #sleep 20
 
     if [[ ! $(cat $RUNDIR/.iwlist.scan | $GREP  "No Scan") ]]; then
@@ -255,7 +259,7 @@ start_scan () {
             fi
            
     fi
-
+    fi
     #sleep 20
     #cat $IFACEFILE
     #sleep 50
@@ -288,3 +292,4 @@ esac
 
 exit 0
 #) 2>&1 | tee -a $RUNDIR/.debug/scan_network.debug
+) 2>/dev/null
