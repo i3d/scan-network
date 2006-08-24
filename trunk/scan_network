@@ -10,9 +10,9 @@
 # Required-Start:    S06DSSLV-disks. This tool *MUST* run after the diskmount for the home user device
 #                    if home is a writable device in LiveCD env. On a local system, this is not required.
 # Required-Stop:
-# Default-Start:     rcS.d/S08scan_network
-# Default-Stop:      optional: rc0.d/K08scan_network
-#                    rc6.d/K08scan_network
+# Default-Start:     rcS.d/S11scan_network
+# Default-Stop:      optional: rc0.d/K11scan_network
+#                    rc6.d/K11scan_network
 # Short-Description: scan avail networks and populate interfaces file.
 # Description:       
 #                    
