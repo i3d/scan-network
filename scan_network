@@ -2,7 +2,7 @@
 
 ### BEGIN INFO
 # $Id. Yongjian Xu <i3dmaster@gmail.com> $
-# $Version: 0.3.2 $
+# $Version: 0.3.3 $
 # $ This source code maintained by svn at <http://code.google.com/p/scan-network/> $
 #
 # Provides:          scan_network
@@ -228,8 +228,12 @@ start_scan () {
             cat $RUNDIR/.iwlist.scan | awk 'BEGIN{FS="Cell "; RS=""};{for(i=2;i<=NF;i++)print $i >"'$RUNDIR'/."i-1".scan"}'
             #pick the strongest one to access
             #sleep 40
-            wifi_info=$(cat $($GREP -iw quality $RUNDIR/.[1-9]*.scan \
-            | sort -t'=' -k2.1nr | awk '{$1=gensub(":","","g",$1);print $1}' | head -1))
+            if [[ $(echo $(ls $RUNDIR/.[1-9]*.scan|wc -l)) -eq 1 ]]; then
+                wifi_info=$(cat .1.scan) 
+            else
+                wifi_info=$(cat $($GREP -iw quality $RUNDIR/.[1-9]*.scan \
+                | sort -t'=' -k2.1nr | awk '{$1=gensub(":","","g",$1);print $1}' | head -1))
+            fi
             #echo "the wifi_info is $wifi_info"
             ESSID=$(echo $wifi_info| $GREP 'ESSID' | awk -F\" '{print $2}')
             #MODE=$(echo $wifi_info | $GREP 'Mode' | awk -F: '{print $2}')
