@@ -31,6 +31,7 @@
 #For debug purpose
 export RUNDIR="/etc/network/scan_network"
 #[[ -f $RUNDIR/scan_network.debug ]] && rm -f $RUNDIR/scan_network.debug
+#touch $RUNDIR/scan_network.debug
 
 set -e
 
@@ -99,7 +100,7 @@ alter_dhcfg() {
                 #echo "the content of $RUNDIR/.dhcfg is $(cat $RUNDIR/.dhcfg)"
         else
                 echo -e "${YELLOW}$DHCFG not found. Unable to probe wireless networks."
-                return 1 
+                return 1
         fi
 }
 
@@ -271,7 +272,7 @@ start_scan () {
 #[[ ! -d $RUNDIR/.debug ]] && mkdir -p $RUNDIR/.debug && echo "Creating debug dir"
 #mv $RUNDIR/.*.scan $RUNDIR/.iwconfig $RUNDIR/.dhcfg $RUNDIR/.debug
 #sleep 20
-rm -fr $RUNDIR/.*.scan $RUNDIR/.iwconfig $RUNDIR/.dhcfg
+rm -fr $RUNDIR/.*.scan $RUNDIR/.iwconfig $RUNDIR/.dhcfg 2>/dev/null
 log_end_msg 0
 }
  
