@@ -2,7 +2,7 @@
 
 ### BEGIN INFO
 # $Id. Yongjian Xu <i3dmaster@gmail.com> $
-# $Version: 0.3.3 $
+# $Version: 0.3.4 $
 # $ This source code maintained by svn at <http://code.google.com/p/scan-network/> $
 #
 # Provides:          scan_network
@@ -224,7 +224,7 @@ start_scan () {
         fi
     #sleep 20
 
-    if [[ ! $(cat $RUNDIR/.iwlist.scan | $GREP  "No Scan") ]]; then
+    if [[ ! $(cat $RUNDIR/.iwlist.scan | $GREP -i "No Scan") ]]; then
             #cat $RUNDIR/.iwlist.scan && sleep 30
             cat $RUNDIR/.iwlist.scan | awk 'BEGIN{FS="Cell "; RS=""};{for(i=2;i<=NF;i++)print $i >"'$RUNDIR'/."i-1".scan"}'
             #pick the strongest one to access
