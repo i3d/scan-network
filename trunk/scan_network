@@ -1,9 +1,27 @@
 #!/bin/bash
 
 ### BEGIN INFO
+#
 # $Id. Yongjian Xu <i3dmaster@gmail.com> $
 # $Version: 0.3.4 $
 # $ This source code maintained by svn at <http://code.google.com/p/scan-network/> $
+#
+# Copyright (C) 2006 Yongjian Xu
+
+## This program is free software; you can redistribute it and/or
+## modify it under the terms of the GNU General Public License
+## as published by the Free Software Foundation; either version 2
+## of the License, or (at your option) any later version.
+#
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+#
+## You should have received a copy of the GNU General Public License
+## along with this program; if not, write to the Free Software
+## Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#
 #
 # Provides:          scan_network
 # Required:          Bash - this program used process substitution. Normal sh will not support this feature.
@@ -25,8 +43,6 @@
 # Comments: This script is having problem running under virtual machine
 #           since the the network interfaces under vm are virtual devices.
 #           mii-tool will report error.
-# 
-# This program is licensed under GPL.
 #
 ### END INIT INFO
 
@@ -49,7 +65,6 @@ if [[ "$LIVECD" != "" ]]; then
         if [[ ! -e /home/$LIVEUSER/.scan_network ]]; then
                 mkdir -p /home/$LIVEUSER/.scan_network
                 cp /etc/network/scan_network/* /home/$LIVEUSER/.scan_network
-                chown -R $LIVEUSER:$LIVEUSER /home/$LIVEUSER/.scan_network
                 
         fi
         export CFG_DIR="/home/$LIVEUSER/.scan_network"
