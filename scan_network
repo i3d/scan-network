@@ -25,6 +25,8 @@
 # Comments: This script is having problem running under virtual machine
 #           since the the network interfaces under vm are virtual devices.
 #           mii-tool will report error.
+# 
+# This program is licensed under GPL.
 #
 ### END INIT INFO
 
